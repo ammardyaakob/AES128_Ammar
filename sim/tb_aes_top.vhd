@@ -274,7 +274,7 @@ begin
             -- Feed remaining bytes on rk_valid and capture result bytes whenever
             -- done marks the output window as valid.
             while out_idx < 16 loop
-                wait until falling_edge(clk);
+                wait until rising_edge(clk);
                 cycles := cycles + 1;
 
                 assert cycles < MAX_CASE_CYCLES
@@ -315,13 +315,13 @@ begin
 
             byte_in <= (others => '0');
 
-            wait until falling_edge(clk);
+            wait until rising_edge(clk);
             assert done = '0'
                 report case_name & " kept done high beyond the 16-byte output window"
                 severity failure;
 
             for quiet_cycle in 2 to QUIET_CYCLES_AFTER_DONE loop
-                wait until falling_edge(clk);
+                wait until rising_edge(clk);
                 assert done = '0'
                     report case_name & " re-asserted done unexpectedly after completion"
                     severity failure;

@@ -500,7 +500,7 @@ begin
                                 dec_state_bytes(0) <= first_input_byte;
                                 dec_input_store_idx <= 1;
                             elsif (roundkey_valid_d = '1') and (dec_input_store_idx < 16) then
-                                dec_state_bytes(dec_input_store_idx) <= byte_in_aligned;
+                                dec_state_bytes(dec_input_store_idx) <= byte_in;
                                 dec_input_store_idx <= dec_input_store_idx + 1;
                             end if;
                         elsif dec_key_store_idx = 176 then
@@ -670,7 +670,7 @@ begin
                    when (encrypt = '0') and (dec_fsm = dec_subbytes) else
                    first_input_byte xor roundkey_byte_out
                    when (roundkey_valid = '1') and (roundkey_valid_d = '0') and (input_type = bytes) else
-                   byte_in_aligned xor roundkey_byte_out
+                   byte_in xor roundkey_byte_out
                    when (roundkey_valid = '1') and (input_type = bytes) else
                    p2s_serial_out xor roundkey_byte_out
                    when (roundkey_valid = '1') and (input_type = p2s) else
