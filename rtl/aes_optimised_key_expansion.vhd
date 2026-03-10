@@ -2,16 +2,16 @@
 -- Company: University of Sheffield
 -- Engineer: David Cracknell
 --
--- Create Date: 02/03/2026 01:41:15 PM
--- Design Name:
--- Module Name: aes_key_expansion - Behavioral
+-- Create Date: 11/03/2026 01:41:15 PM
+-- Design Name: Low area Key expansion enc & dec
+-- Module Name: aes_key_expansion 
 -- Project Name: optimised for low area AES device
 -- Description:
---   Serial AES-128 key expansion.
---   The encrypt-only build keeps just the current 128-bit round key plus the
---   4-byte g() cache. Round transitions are computed a word at a time instead
---   of updating all 16 bytes through a wider byte-indexed datapath, reducing
---   control/mux area while preserving the streamed round-key interface.
+-- Serial AES-128 key expansion.
+-- This module is a low-area serial AES-128 key expansion using an FSM, which generates and outputs each round key one byte per clock cycle.
+-- To reduce FPGA area, it stores only the current round key words and uses a single shared S-box to perform the AES g() function over multiple cycles. 
+-- This means the design trades throughput for lower LUT usage and simpler hardware. 
+-- Decryption support is included by first generating the final round key, then stepping backwards through the key schedule to reconstruct the earlier round keys as needed.
 ----------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
