@@ -1,119 +1,121 @@
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+library ieee;
+use ieee.std_logic_1164.all;
 
---////////////////////////////////////////////////////////////////////////////////
--- Company: 
--- Engineer: 
--- 
--- Create Date: 19.02.2026 12:03:26
--- Design Name: 
--- Module Name: shifter32x8byteintb
--- Project Name: 
--- Target Devices: 
--- Tool Versions: 
--- Description: VHDL testbench for shifter32x8byteinvhd
--- 
--- Dependencies: shifter32x8byteinvhd
--- 
--- Revision:
--- Revision 0.01 - File Created
--- Additional Comments:
--- 
---////////////////////////////////////////////////////////////////////////////////
+library std;
+use std.env.all;
 
-entity shifter32x8byteintbvhd is
-end shifter32x8byteintbvhd;
+-- Directed testbench for the serial ShiftRows / InvShiftRows block.
+-- The bench streams one full AES state plus extra padding cycles so the SRL
+-- implementation has time to emit the permuted 16-byte result sequence.
+entity shifter_serial_tb is
+end entity shifter_serial_tb;
 
-architecture behavioral of shifter32x8byteintbvhd is
-    
-    ----------------------------------------------------------------
-    -- Component Declaration
-    ----------------------------------------------------------------
-    component shifter_serial
-        port (
-            clk       : in  std_logic;
-            state_in  : in  std_logic_vector(7 downto 0);
-            state_out : out std_logic_vector(7 downto 0);
-            ce        : in  std_logic
-        );
-    end component;
-    
-    ----------------------------------------------------------------
-    -- DUT signals
-    ----------------------------------------------------------------
-    signal clk              : std_logic := '0';
-    signal state_in         : std_logic_vector(127 downto 0);
-    signal state_out        : std_logic_vector(127 downto 0);
-    signal byte_in          : std_logic_vector(7 downto 0);
-    signal byte_out         : std_logic_vector(7 downto 0);
-    signal counter          : unsigned(3 downto 0) := (others => '0');
-    signal assign_counter   : unsigned(3 downto 0) := (others => '0');
-    signal start            : std_logic := '0';
-    signal ce               : std_logic;
-    signal start_assign     : std_logic := '0';
-    
-    -- Clock period definition
-    constant clk_period : time := 10 ns;
-    
+architecture sim of shifter_serial_tb is
+    constant CLK_PERIOD : time := 10 ns;
+
+    type byte_array16_t is array (0 to 15) of std_logic_vector(7 downto 0);
+
+    -- Column-major AES state bytes.
+    constant INPUT_BYTES : byte_array16_t := (
+        x"00", x"11", x"22", x"33",
+        x"44", x"55", x"66", x"77",
+        x"88", x"99", x"AA", x"BB",
+        x"CC", x"DD", x"EE", x"FF"
+    );
+
+    -- Expected ShiftRows output ordering.
+    constant EXPECTED_FWD : byte_array16_t := (
+        x"00", x"55", x"AA", x"FF",
+        x"44", x"99", x"EE", x"33",
+        x"88", x"DD", x"22", x"77",
+        x"CC", x"11", x"66", x"BB"
+    );
+
+    -- Expected inverse ShiftRows output ordering.
+    constant EXPECTED_INV : byte_array16_t := (
+        x"00", x"DD", x"AA", x"77",
+        x"44", x"11", x"EE", x"BB",
+        x"88", x"55", x"22", x"FF",
+        x"CC", x"99", x"66", x"33"
+    );
+
+    signal clk      : std_logic := '0';
+    signal ce       : std_logic := '0';
+    signal rst      : std_logic := '1';
+    signal inverse  : std_logic := '0';
+    signal state_in : std_logic_vector(7 downto 0) := (others => '0');
+    signal state_out : std_logic_vector(7 downto 0);
+    signal done     : std_logic;
 begin
-    
-    ----------------------------------------------------------------
-    -- Instantiate DUT
-    ----------------------------------------------------------------
-    dut : shifter_serial
+
+    clk <= not clk after CLK_PERIOD / 2;
+
+    dut : entity work.shifter_serial
+        generic map (
+            support_inverse => true
+        )
         port map (
+            state_in  => state_in,
+            state_out => state_out,
+            ce        => ce,
             clk       => clk,
-            state_in  => byte_in,
-            state_out => byte_out,
-            ce        => ce
+            rst       => rst,
+            inverse   => inverse,
+            done      => done
         );
-    
-    ----------------------------------------------------------------
-    -- Clock generation - 10 ns period (100 MHz)
-    ----------------------------------------------------------------
-    clk_process : process
-    begin
-        clk <= '0';
-        wait for clk_period/2;
-        clk <= '1';
-        wait for clk_period/2;
-    end process;
-    
-    ----------------------------------------------------------------
-    -- Main process
-    ----------------------------------------------------------------
-    main_process : process(clk)
-    begin
-        if rising_edge(clk) then
-            if start = '1' then
-                -- Extract byte from state_in based on counter
-                byte_in <= state_in(to_integer(counter)*8 + 7 downto to_integer(counter)*8);
+
+    stim : process
+        variable captured : byte_array16_t;
+
+        procedure run_case(
+            constant inv_mode : std_logic;
+            constant expected : byte_array16_t;
+            constant case_name : string
+        ) is
+        begin
+            -- Reset between forward and inverse cases to clear SRL history.
+            inverse <= inv_mode;
+            ce <= '0';
+            rst <= '1';
+            state_in <= (others => '0');
+            wait until rising_edge(clk);
+            rst <= '0';
+            wait until rising_edge(clk);
+
+            for step in 0 to 31 loop
+                if step < 16 then
+                    state_in <= INPUT_BYTES(step);
+                else
+                    -- Flush the delayed bytes out of the SRL structure.
+                    state_in <= (others => '0');
+                end if;
+
                 ce <= '1';
-                counter <= counter + 1;
-                
-                if counter = 13 then
-                    start_assign <= '1';
+                wait until rising_edge(clk);
+
+                if (step >= 12) and (step <= 27) then
+                    captured(step - 12) := state_out;
                 end if;
-                
-                if start_assign = '1' then
-                    -- Assign byte_out to state_out based on assign_counter
-                    state_out(to_integer(assign_counter)*8 + 7 downto to_integer(assign_counter)*8) <= byte_out;
-                    assign_counter <= assign_counter + 1;
-                end if;
-            end if;
-        end if;
-    end process;
-    
-    ----------------------------------------------------------------
-    -- Stimulus process
-    ----------------------------------------------------------------
-    stimulus : process
+            end loop;
+
+            ce <= '0';
+            wait for CLK_PERIOD;
+
+            for i in 0 to 15 loop
+                assert captured(i) = expected(i)
+                    report case_name & " mismatch at byte " & integer'image(i) &
+                           ": got " & to_hstring(captured(i)) &
+                           " expected " & to_hstring(expected(i))
+                    severity failure;
+            end loop;
+        end procedure;
     begin
-        -- AES test vector
-        state_in <= x"00112233_44556677_8899aabb_ccddeeff";
-        wait for 100 ns;
-        start <= '1';
+        -- Verify both byte permutations generated by the shared hardware.
+        run_case('0', EXPECTED_FWD, "ShiftRows");
+        run_case('1', EXPECTED_INV, "InvShiftRows");
+
+        report "shifter_serial_tb PASSED" severity note;
+        finish;
     end process;
-    
-end behavioral;
+
+end architecture sim;
